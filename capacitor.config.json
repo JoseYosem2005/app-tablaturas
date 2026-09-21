@@ -1,0 +1,8 @@
+{
+  "appId": "com.joseyosem.tabfinder",
+  "appName": "Tab Finder",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}
