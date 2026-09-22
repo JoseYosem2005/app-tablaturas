@@ -28,10 +28,15 @@ const EXT_COLOR = {
 
 // Directorios que Capacitor Filesystem soporta SIN pedir permisos
 // peligrosos (no hay Directory.* en runtime, son strings literales
-// que el plugin nativo interpreta directamente).
+// que el plugin nativo interpreta directamente). "CUSTOM" es un valor
+// propio de esta app (no de Capacitor) que activa el modo de ruta
+// absoluta elegida por el usuario.
 const DOWNLOAD_DIR_KEY = "tabfinder_download_dir";
 const DEFAULT_DOWNLOAD_DIR = "EXTERNAL_STORAGE";
-const VALID_DIRS = new Set(["EXTERNAL_STORAGE", "DOCUMENTS", "CACHE"]);
+const VALID_DIRS = new Set(["EXTERNAL_STORAGE", "DOCUMENTS", "CACHE", "CUSTOM"]);
+
+const CUSTOM_PATH_KEY = "tabfinder_custom_path";
+const ROOT_PATH = "/storage/emulated/0";
 
 function getDownloadDir() {
   try {
@@ -49,6 +54,63 @@ function setDownloadDir(v) {
     localStorage.setItem(DOWNLOAD_DIR_KEY, v);
   } catch (e) {
     // se ignora — si no se puede persistir, se usa solo en esta sesion
+  }
+}
+
+function getCustomPath() {
+  try {
+    return localStorage.getItem(CUSTOM_PATH_KEY) || ROOT_PATH;
+  } catch (e) {
+    return ROOT_PATH;
+  }
+}
+
+function setCustomPath(p) {
+  try {
+    localStorage.setItem(CUSTOM_PATH_KEY, p);
+  } catch (e) {
+    // se ignora
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Permisos de almacenamiento — solo hacen falta para la carpeta "Personalizada"
+// ---------------------------------------------------------------------------
+
+async function ensureStoragePermission() {
+  const plugins = window.Capacitor && window.Capacitor.Plugins;
+  if (!plugins || !plugins.Device || !plugins.Filesystem) {
+    throw new Error("Los plugins Device/Filesystem de Capacitor no estan disponibles.");
+  }
+  const { Device, Filesystem } = plugins;
+
+  const info = await Device.getInfo();
+  if (info.platform !== "android") return true; // en otras plataformas no aplica
+
+  const sdk = info.androidSDKVersion || 0;
+
+  if (sdk < 30) {
+    // Android 6-10 (API 23-29): permiso clasico, con popup normal del sistema.
+    const perm = await Filesystem.requestPermissions();
+    const granted = perm && perm.publicStorage === "granted";
+    if (!granted) {
+      throw new Error(
+        "Se necesita el permiso de almacenamiento para usar una carpeta personalizada."
+      );
+    }
+    return true;
+  }
+
+  // Android 11+ (API 30+): MANAGE_EXTERNAL_STORAGE no tiene popup normal.
+  // Se verifica intentando leer la raiz del almacenamiento externo.
+  try {
+    await Filesystem.readdir({ path: ROOT_PATH });
+    return true;
+  } catch (e) {
+    throw new Error(
+      "Activa el permiso a mano: Ajustes del telefono → Apps → Tab Finder → " +
+        "Permisos → Archivos y contenido multimedia → Permitir gestion de todos los archivos."
+    );
   }
 }
 
@@ -287,29 +349,46 @@ async function descargarArchivo(url, nombre, onProgress) {
 
   // CapacitorHttp con responseType arraybuffer devuelve la data ya en base64
   const base64Data = res.data;
-
-  // NOTA: "Directory" NO es un plugin ni existe en window.Capacitor.Plugins.
-  // Es solo un enum de conveniencia que exporta el paquete npm de Filesystem
-  // para quien usa bundler/import. Como esta app no usa bundler, se pasa
-  // directamente el string literal que ese enum representa internamente
-  // (ver getDownloadDir(), configurable desde el panel de ajustes).
+  const { Filesystem } = plugins;
+  const dest = nombre;
   const dirValue = getDownloadDir();
 
-  const { Filesystem } = plugins;
-  let dest = nombre;
-  try {
-    await Filesystem.writeFile({
+  let writeParams;
+  let resultPath;
+
+  if (dirValue === "CUSTOM") {
+    await ensureStoragePermission();
+    const customPath = getCustomPath().replace(/\/$/, "");
+    // Ruta absoluta: sin "directory", Capacitor Filesystem la trata como
+    // path absoluto del sistema en Android (requiere el permiso de arriba).
+    writeParams = {
+      path: `${customPath}/${dest}`,
+      data: base64Data,
+      recursive: true,
+    };
+    resultPath = `${customPath}/${dest}`;
+  } else {
+    // NOTA: "Directory" NO es un plugin ni existe en window.Capacitor.Plugins.
+    // Es solo un enum de conveniencia que exporta el paquete npm de
+    // Filesystem para quien usa bundler/import. Como esta app no usa
+    // bundler, se pasa directamente el string literal que representa.
+    writeParams = {
       path: `tablaturas/${dest}`,
       data: base64Data,
       directory: dirValue,
       recursive: true,
-    });
+    };
+    resultPath = `tablaturas/${dest}`;
+  }
+
+  try {
+    await Filesystem.writeFile(writeParams);
   } catch (e) {
     throw new Error("No se pudo guardar el archivo: " + (e.message || e));
   }
 
   onProgress("Descarga completa");
-  return `tablaturas/${dest}`;
+  return resultPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +407,16 @@ const els = {
   settingsSave: document.getElementById("settingsSave"),
   settingsOverlay: document.getElementById("settingsOverlay"),
   dirSelect: document.getElementById("dirSelect"),
+  customPathRow: document.getElementById("customPathRow"),
+  customPathLabel: document.getElementById("customPathLabel"),
+  chooseFolderBtn: document.getElementById("chooseFolderBtn"),
+  folderBrowserOverlay: document.getElementById("folderBrowserOverlay"),
+  folderBackBtn: document.getElementById("folderBackBtn"),
+  folderBrowserClose: document.getElementById("folderBrowserClose"),
+  folderPath: document.getElementById("folderPath"),
+  folderList: document.getElementById("folderList"),
+  folderCurrent: document.getElementById("folderCurrent"),
+  folderSelectBtn: document.getElementById("folderSelectBtn"),
 };
 
 let busy = false;
@@ -456,8 +545,15 @@ async function handleSearch() {
 // Panel de configuracion
 // ---------------------------------------------------------------------------
 
+function refreshCustomPathVisibility() {
+  const isCustom = els.dirSelect.value === "CUSTOM";
+  els.customPathRow.classList.toggle("hidden", !isCustom);
+  els.customPathLabel.textContent = getCustomPath();
+}
+
 function openSettings() {
   els.dirSelect.value = getDownloadDir();
+  refreshCustomPathVisibility();
   els.settingsOverlay.classList.remove("hidden");
 }
 
@@ -471,10 +567,104 @@ function saveSettings() {
   setStatus("Carpeta de descarga guardada", "var(--ok)");
 }
 
+// ---------------------------------------------------------------------------
+// Explorador de carpetas (para la opcion "Personalizada")
+// ---------------------------------------------------------------------------
+
+let browserHistory = [];
+let browserCurrentPath = ROOT_PATH;
+
+async function openFolderBrowser() {
+  try {
+    setStatus("Verificando permiso de almacenamiento…");
+    await ensureStoragePermission();
+  } catch (e) {
+    setStatus(`Error: ${e.message}`, "var(--err)");
+    return;
+  }
+  setStatus("");
+  browserHistory = [];
+  els.folderBrowserOverlay.classList.remove("hidden");
+  await loadFolder(getCustomPath());
+}
+
+function closeFolderBrowser() {
+  els.folderBrowserOverlay.classList.add("hidden");
+}
+
+async function loadFolder(path) {
+  browserCurrentPath = path;
+  els.folderPath.textContent = path;
+  els.folderCurrent.textContent = path;
+  els.folderBackBtn.disabled = browserHistory.length === 0;
+  els.folderList.innerHTML = "";
+
+  const plugins = window.Capacitor.Plugins;
+  const { Filesystem } = plugins;
+
+  let entries = [];
+  try {
+    const res = await Filesystem.readdir({ path });
+    entries = (res.files || [])
+      .filter((f) => f.type === "directory")
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) {
+    const empty = document.createElement("div");
+    empty.className = "folder-empty";
+    empty.textContent = "(no se pudo leer esta carpeta)";
+    els.folderList.appendChild(empty);
+    return;
+  }
+
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "folder-empty";
+    empty.textContent = "(carpeta vacia)";
+    els.folderList.appendChild(empty);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const row = document.createElement("button");
+    row.className = "folder-row";
+    row.type = "button";
+    row.textContent = "📁 " + entry.name;
+    row.addEventListener("click", () => {
+      browserHistory.push(browserCurrentPath);
+      loadFolder(path.replace(/\/$/, "") + "/" + entry.name);
+    });
+    els.folderList.appendChild(row);
+  });
+}
+
+function folderGoBack() {
+  if (browserHistory.length === 0) return;
+  const prev = browserHistory.pop();
+  loadFolder(prev);
+}
+
+function folderSelectCurrent() {
+  setCustomPath(browserCurrentPath);
+  els.customPathLabel.textContent = browserCurrentPath;
+  closeFolderBrowser();
+}
+
+// ---------------------------------------------------------------------------
+// Listeners
+// ---------------------------------------------------------------------------
+
 els.searchBtn.addEventListener("click", handleSearch);
 els.settingsBtn.addEventListener("click", openSettings);
 els.settingsClose.addEventListener("click", closeSettings);
 els.settingsSave.addEventListener("click", saveSettings);
 els.settingsOverlay.addEventListener("click", (e) => {
   if (e.target === els.settingsOverlay) closeSettings();
+});
+els.dirSelect.addEventListener("change", refreshCustomPathVisibility);
+els.chooseFolderBtn.addEventListener("click", openFolderBrowser);
+els.folderBackBtn.addEventListener("click", folderGoBack);
+els.folderBrowserClose.addEventListener("click", closeFolderBrowser);
+els.folderSelectBtn.addEventListener("click", folderSelectCurrent);
+els.folderBrowserOverlay.addEventListener("click", (e) => {
+  if (e.target === els.folderBrowserOverlay) closeFolderBrowser();
 });
