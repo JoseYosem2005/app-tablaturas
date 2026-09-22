@@ -262,13 +262,19 @@ async function descargarArchivo(url, nombre, onProgress) {
   // CapacitorHttp con responseType arraybuffer devuelve la data ya en base64
   const base64Data = res.data;
 
-  const { Filesystem, Directory } = plugins;
+  // NOTA: "Directory" NO es un plugin ni existe en window.Capacitor.Plugins.
+  // Es solo un enum de conveniencia que exporta el paquete npm de Filesystem
+  // para quien usa bundler/import. Como esta app no usa bundler, hay que
+  // pasar el string literal que ese enum representa internamente.
+  const DIRECTORY_DOCUMENTS = "DOCUMENTS";
+
+  const { Filesystem } = plugins;
   let dest = nombre;
   try {
     await Filesystem.writeFile({
       path: `tablaturas/${dest}`,
       data: base64Data,
-      directory: Directory.Documents,
+      directory: DIRECTORY_DOCUMENTS,
       recursive: true,
     });
   } catch (e) {
