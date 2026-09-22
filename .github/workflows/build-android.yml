@@ -29,6 +29,24 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Add storage permissions to AndroidManifest.xml
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          echo "--- Manifest antes del parche ---"
+          cat "$MANIFEST"
+
+          # Permisos de almacenamiento:
+          #  - READ/WRITE clasicos, limitados a Android <=10/9 via maxSdkVersion
+          #  - MANAGE_EXTERNAL_STORAGE para Android 11+ (se activa a mano en Ajustes)
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n</manifest>#' "$MANIFEST"
+
+          # requestLegacyExternalStorage: solo tiene efecto en Android <=10,
+          # Android 11+ lo ignora sin problema.
+          sed -i 's#<application#<application\n        android:requestLegacyExternalStorage="true"#' "$MANIFEST"
+
+          echo "--- Manifest despues del parche ---"
+          cat "$MANIFEST"
+
       - name: Sync web assets
         run: npx cap sync android
 
