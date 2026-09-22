@@ -26,6 +26,32 @@ const EXT_COLOR = {
   GP: "#f59e0b",
 };
 
+// Directorios que Capacitor Filesystem soporta SIN pedir permisos
+// peligrosos (no hay Directory.* en runtime, son strings literales
+// que el plugin nativo interpreta directamente).
+const DOWNLOAD_DIR_KEY = "tabfinder_download_dir";
+const DEFAULT_DOWNLOAD_DIR = "EXTERNAL_STORAGE";
+const VALID_DIRS = new Set(["EXTERNAL_STORAGE", "DOCUMENTS", "CACHE"]);
+
+function getDownloadDir() {
+  try {
+    const v = localStorage.getItem(DOWNLOAD_DIR_KEY);
+    if (v && VALID_DIRS.has(v)) return v;
+  } catch (e) {
+    // localStorage puede fallar en algunos webviews restringidos
+  }
+  return DEFAULT_DOWNLOAD_DIR;
+}
+
+function setDownloadDir(v) {
+  if (!VALID_DIRS.has(v)) return;
+  try {
+    localStorage.setItem(DOWNLOAD_DIR_KEY, v);
+  } catch (e) {
+    // se ignora — si no se puede persistir, se usa solo en esta sesion
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de red — usan el plugin nativo CapacitorHttp
 // ---------------------------------------------------------------------------
@@ -264,9 +290,10 @@ async function descargarArchivo(url, nombre, onProgress) {
 
   // NOTA: "Directory" NO es un plugin ni existe en window.Capacitor.Plugins.
   // Es solo un enum de conveniencia que exporta el paquete npm de Filesystem
-  // para quien usa bundler/import. Como esta app no usa bundler, hay que
-  // pasar el string literal que ese enum representa internamente.
-  const DIRECTORY_DOCUMENTS = "DOCUMENTS";
+  // para quien usa bundler/import. Como esta app no usa bundler, se pasa
+  // directamente el string literal que ese enum representa internamente
+  // (ver getDownloadDir(), configurable desde el panel de ajustes).
+  const dirValue = getDownloadDir();
 
   const { Filesystem } = plugins;
   let dest = nombre;
@@ -274,7 +301,7 @@ async function descargarArchivo(url, nombre, onProgress) {
     await Filesystem.writeFile({
       path: `tablaturas/${dest}`,
       data: base64Data,
-      directory: DIRECTORY_DOCUMENTS,
+      directory: dirValue,
       recursive: true,
     });
   } catch (e) {
@@ -282,7 +309,7 @@ async function descargarArchivo(url, nombre, onProgress) {
   }
 
   onProgress("Descarga completa");
-  return `Documents/tablaturas/${dest}`;
+  return `tablaturas/${dest}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +323,11 @@ const els = {
   count: document.getElementById("count"),
   results: document.getElementById("results"),
   status: document.getElementById("status"),
+  settingsBtn: document.getElementById("settingsBtn"),
+  settingsClose: document.getElementById("settingsClose"),
+  settingsSave: document.getElementById("settingsSave"),
+  settingsOverlay: document.getElementById("settingsOverlay"),
+  dirSelect: document.getElementById("dirSelect"),
 };
 
 let busy = false;
@@ -420,4 +452,29 @@ async function handleSearch() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Panel de configuracion
+// ---------------------------------------------------------------------------
+
+function openSettings() {
+  els.dirSelect.value = getDownloadDir();
+  els.settingsOverlay.classList.remove("hidden");
+}
+
+function closeSettings() {
+  els.settingsOverlay.classList.add("hidden");
+}
+
+function saveSettings() {
+  setDownloadDir(els.dirSelect.value);
+  closeSettings();
+  setStatus("Carpeta de descarga guardada", "var(--ok)");
+}
+
 els.searchBtn.addEventListener("click", handleSearch);
+els.settingsBtn.addEventListener("click", openSettings);
+els.settingsClose.addEventListener("click", closeSettings);
+els.settingsSave.addEventListener("click", saveSettings);
+els.settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === els.settingsOverlay) closeSettings();
+});
