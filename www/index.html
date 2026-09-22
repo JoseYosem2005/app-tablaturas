@@ -10,6 +10,8 @@
 
   <header class="topbar">
     <span class="brand">Tab Finder</span>
+    <span class="spacer"></span>
+    <button id="settingsBtn" class="btn-icon" aria-label="Configuracion">⚙</button>
   </header>
 
   <section class="search-panel">
@@ -27,6 +29,31 @@
   <main id="results" class="results"></main>
 
   <footer id="status" class="status-bar"></footer>
+
+  <!-- Panel de configuracion -->
+  <div id="settingsOverlay" class="overlay hidden">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <span>Configuracion</span>
+        <button id="settingsClose" class="btn-icon" aria-label="Cerrar">✕</button>
+      </div>
+
+      <label class="field-label">CARPETA DE DESCARGA</label>
+      <select id="dirSelect">
+        <option value="EXTERNAL_STORAGE">Externo (visible en exploradores de archivos)</option>
+        <option value="DOCUMENTS">Documentos (privado de la app)</option>
+        <option value="CACHE">Cache (temporal, privado)</option>
+      </select>
+      <p class="settings-hint">
+        "Externo" es lo mas facil de encontrar despues con otra app (por ejemplo,
+        para abrir el archivo con una app de Guitar Pro). No requiere permisos
+        adicionales: es una carpeta propia de Tab Finder dentro del almacenamiento
+        del telefono.
+      </p>
+
+      <button id="settingsSave" class="btn-accent">Guardar</button>
+    </div>
+  </div>
 
   <script src="js/app.js"></script>
 </body>
