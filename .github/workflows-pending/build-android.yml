@@ -32,6 +32,9 @@ jobs:
       - name: Sync web assets
         run: npx cap sync android
 
+      - name: Generate app icons from assets/icon.svg
+        run: npx capacitor-assets generate --android
+
       - name: Grant execute permission to gradlew
         run: chmod +x android/gradlew
 
