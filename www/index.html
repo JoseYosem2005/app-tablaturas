@@ -43,15 +43,39 @@
         <option value="EXTERNAL_STORAGE">Externo (visible en exploradores de archivos)</option>
         <option value="DOCUMENTS">Documentos (privado de la app)</option>
         <option value="CACHE">Cache (temporal, privado)</option>
+        <option value="CUSTOM">Personalizada…</option>
       </select>
+
+      <div id="customPathRow" class="custom-path-row hidden">
+        <div id="customPathLabel" class="custom-path-label">/storage/emulated/0</div>
+        <button id="chooseFolderBtn" class="btn-secondary" type="button">Elegir carpeta…</button>
+      </div>
+
       <p class="settings-hint">
         "Externo" es lo mas facil de encontrar despues con otra app (por ejemplo,
-        para abrir el archivo con una app de Guitar Pro). No requiere permisos
-        adicionales: es una carpeta propia de Tab Finder dentro del almacenamiento
-        del telefono.
+        para abrir el archivo con una app de Guitar Pro), sin pedir permisos
+        adicionales. "Personalizada" te deja elegir cualquier carpeta del
+        telefono, pero requiere permiso de almacenamiento (en Android 11+ hay
+        que activarlo una vez a mano en Ajustes de la app).
       </p>
 
       <button id="settingsSave" class="btn-accent">Guardar</button>
+    </div>
+  </div>
+
+  <!-- Explorador de carpetas (para la opcion "Personalizada") -->
+  <div id="folderBrowserOverlay" class="overlay hidden">
+    <div class="folder-browser">
+      <div class="folder-browser-top">
+        <button id="folderBackBtn" class="btn-secondary" type="button" disabled>← Atras</button>
+        <button id="folderBrowserClose" class="btn-icon" aria-label="Cerrar">✕</button>
+      </div>
+      <div id="folderPath" class="folder-path"></div>
+      <div id="folderList" class="folder-list"></div>
+      <div class="folder-browser-bottom">
+        <div id="folderCurrent" class="folder-current"></div>
+        <button id="folderSelectBtn" class="btn-accent" type="button">Seleccionar esta carpeta</button>
+      </div>
     </div>
   </div>
 
